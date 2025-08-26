@@ -1,3 +1,5 @@
+# **Experimental work on adding RETRO_POINTER & Samsung S-Pen support for libretro cores!** #
+
 # SwanStation - PlayStation 1, aka. PSX Emulator
 [Features](#features) | [System Requirements](#system-requirements) | [Disclaimers](#disclaimers)
 
