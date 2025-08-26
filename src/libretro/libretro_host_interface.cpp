@@ -33,6 +33,18 @@
 #include <file/file_path.h>
 #include <streams/file_stream.h>
 
+/* S-Pen action definitions */
+#define SPEN_ACTION_DISABLED      0
+#define SPEN_ACTION_LEFT_CLICK    1
+#define SPEN_ACTION_RIGHT_CLICK   2
+#define SPEN_ACTION_MIDDLE_CLICK  3
+#define SPEN_ACTION_TRIGGER       4
+#define SPEN_ACTION_RELOAD        5
+
+/* S-Pen configuration variables */
+static int spen_tap_action = SPEN_ACTION_TRIGGER;
+static int spen_barrel_action = SPEN_ACTION_RELOAD;
+
 Log_SetChannel(LibretroHostInterface);
 
 #ifdef WIN32
@@ -1038,6 +1050,10 @@ bool LibretroHostInterface::UpdateCoreOptionsDisplay(bool controller)
   option_display.key = "swanstation_Controller_ShowCrosshair";
   g_retro_environment_callback(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &option_display);
 
+  option_display.visible = guncon_aspect;
+  option_display.key = "swanstation_Controller_GunconInputMode";
+  g_retro_environment_callback(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &option_display);
+
   option_display.visible = !guncon_aspect;
   option_display.key = "swanstation_Display_AspectRatio";
   g_retro_environment_callback(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &option_display);
@@ -1622,49 +1638,224 @@ void LibretroHostInterface::UpdateControllersNamcoGunCon(u32 index)
 {
   NamcoGunCon* controller = static_cast<NamcoGunCon*>(System::GetController(index));
 
-  static constexpr std::array<std::pair<NamcoGunCon::Button, u32>, 4> button_mapping = {
-    {{NamcoGunCon::Button::Trigger, RETRO_DEVICE_ID_LIGHTGUN_TRIGGER},
-     {NamcoGunCon::Button::ShootOffscreen, RETRO_DEVICE_ID_LIGHTGUN_RELOAD},
-     {NamcoGunCon::Button::A, RETRO_DEVICE_ID_LIGHTGUN_AUX_A},
-     {NamcoGunCon::Button::B, RETRO_DEVICE_ID_LIGHTGUN_AUX_B}}};
+  /* Parse S-Pen configuration options */
+  const std::string tap_action = GetStringSettingValue("spen", "tap_action", "trigger");
+  const std::string barrel_action = GetStringSettingValue("spen", "barrel_action", "reload");
+  
+  if (tap_action == "left_click")
+    spen_tap_action = SPEN_ACTION_LEFT_CLICK;
+  else if (tap_action == "right_click")
+    spen_tap_action = SPEN_ACTION_RIGHT_CLICK;
+  else if (tap_action == "middle_click")
+    spen_tap_action = SPEN_ACTION_MIDDLE_CLICK;
+  else if (tap_action == "trigger")
+    spen_tap_action = SPEN_ACTION_TRIGGER;
+  else if (tap_action == "reload")
+    spen_tap_action = SPEN_ACTION_RELOAD;
+  else if (tap_action == "disabled")
+    spen_tap_action = SPEN_ACTION_DISABLED;
+    
+  if (barrel_action == "left_click")
+    spen_barrel_action = SPEN_ACTION_LEFT_CLICK;
+  else if (barrel_action == "right_click")
+    spen_barrel_action = SPEN_ACTION_RIGHT_CLICK;
+  else if (barrel_action == "middle_click")
+    spen_barrel_action = SPEN_ACTION_MIDDLE_CLICK;
+  else if (barrel_action == "trigger")
+    spen_barrel_action = SPEN_ACTION_TRIGGER;
+  else if (barrel_action == "reload")
+    spen_barrel_action = SPEN_ACTION_RELOAD;
+  else if (barrel_action == "disabled")
+    spen_barrel_action = SPEN_ACTION_DISABLED;
 
-  for (const auto& it : button_mapping)
+  s32 pos_x = 0, pos_y = 0;
+  bool trigger_pressed = false;
+
+  if (g_settings.controller_guncon_pointer_mode)
   {
-    const int16_t state = g_retro_input_state_callback(index, RETRO_DEVICE_LIGHTGUN, 0, it.second);
-    controller->SetButtonState(it.first, state != 0);
+    // Pointer mode - use RETRO_DEVICE_POINTER with hover support for S-Pen positioning
+    /* Always poll coordinates to support hover cursor movement and side button detection */
+    const int16_t pointer_x = g_retro_input_state_callback(index, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_X);
+    const int16_t pointer_y = g_retro_input_state_callback(index, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_Y);
+    const bool pointer_pressed = g_retro_input_state_callback(index, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED);
+    
+    /* Update position whether pressed or hovering to support cursor movement */
+    pos_x = ((static_cast<s32>(pointer_x) + 0x8000) * m_display->GetWindowWidth()) / 0x10000;
+    pos_y = ((static_cast<s32>(pointer_y) + 0x8000) * m_display->GetWindowHeight()) / 0x10000;
+    
+    /* Button processing happens below for pressed state */
+
+    /* S-Pen button mapping - configurable actions */
+    bool tap_detected = pointer_pressed;
+    /* Side button detection via pointer count - RetroArch exposes side button as additional pointer */
+    int pointer_count = g_retro_input_state_callback(index, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_COUNT);
+    bool barrel_detected = (pointer_count > 1); /* Side button creates additional pointer */
+    bool trigger_state = false;
+    bool reload_state = false;
+    
+    /* Legacy finger touch support - always preserved */
+    if (tap_detected) {
+      trigger_state = true; /* Default finger touch = trigger */
+    }
+    
+    /* S-Pen enhancement - add configurable mapping on top of legacy */
+    if (tap_detected && spen_tap_action != SPEN_ACTION_DISABLED) {
+      switch (spen_tap_action) {
+        case SPEN_ACTION_TRIGGER:
+          trigger_state = true; break;
+        case SPEN_ACTION_RELOAD:
+          reload_state = true; break;
+        /* PlayStation GunCon doesn't have left/right/middle click - map to trigger */
+        case SPEN_ACTION_LEFT_CLICK:
+        case SPEN_ACTION_RIGHT_CLICK:
+        case SPEN_ACTION_MIDDLE_CLICK:
+          trigger_state = true; break;
+      }
+    }
+    
+    if (barrel_detected && spen_barrel_action != SPEN_ACTION_DISABLED) {
+      switch (spen_barrel_action) {
+        case SPEN_ACTION_TRIGGER:
+          trigger_state = true; break;
+        case SPEN_ACTION_RELOAD:
+          reload_state = true; break;
+        /* PlayStation GunCon doesn't have left/right/middle click - map to trigger */
+        case SPEN_ACTION_LEFT_CLICK:
+        case SPEN_ACTION_RIGHT_CLICK:
+        case SPEN_ACTION_MIDDLE_CLICK:
+          trigger_state = true; break;
+      }
+    }
+
+    // Set button states for pointer mode with S-Pen mapping
+    controller->SetButtonState(NamcoGunCon::Button::Trigger, trigger_state);
+    controller->SetButtonState(NamcoGunCon::Button::ShootOffscreen, reload_state || !pointer_pressed);
+    controller->SetButtonState(NamcoGunCon::Button::A, g_retro_input_state_callback(index, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_AUX_A) != 0);
+    controller->SetButtonState(NamcoGunCon::Button::B, g_retro_input_state_callback(index, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_AUX_B) != 0);
+  }
+  else
+  {
+    // Lightgun mode - original behavior
+    static constexpr std::array<std::pair<NamcoGunCon::Button, u32>, 4> button_mapping = {
+      {{NamcoGunCon::Button::Trigger, RETRO_DEVICE_ID_LIGHTGUN_TRIGGER},
+       {NamcoGunCon::Button::ShootOffscreen, RETRO_DEVICE_ID_LIGHTGUN_RELOAD},
+       {NamcoGunCon::Button::A, RETRO_DEVICE_ID_LIGHTGUN_AUX_A},
+       {NamcoGunCon::Button::B, RETRO_DEVICE_ID_LIGHTGUN_AUX_B}}};
+
+    for (const auto& it : button_mapping)
+    {
+      const int16_t state = g_retro_input_state_callback(index, RETRO_DEVICE_LIGHTGUN, 0, it.second);
+      controller->SetButtonState(it.first, state != 0);
+    }
+
+    // Mouse range is between -32767 & 32767
+    const int16_t gun_x = g_retro_input_state_callback(index, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_X);
+    const int16_t gun_y = g_retro_input_state_callback(index, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_Y);
+    pos_x = (g_retro_input_state_callback(index, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_IS_OFFSCREEN) ? 0 : (((static_cast<s32>(gun_x) + 0x7FFF) * m_display->GetWindowWidth()) / 0xFFFF));
+    pos_y = (g_retro_input_state_callback(index, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_IS_OFFSCREEN) ? 0 : (((static_cast<s32>(gun_y) + 0x7FFF) * m_display->GetWindowHeight()) / 0xFFFF));
   }
 
-  // Mouse range is between -32767 & 32767
-  const int16_t gun_x = g_retro_input_state_callback(index, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_X);
-  const int16_t gun_y = g_retro_input_state_callback(index, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_Y);
-  const s32 pos_x = (g_retro_input_state_callback(index, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_IS_OFFSCREEN) ? 0 : (((static_cast<s32>(gun_x) + 0x7FFF) * m_display->GetWindowWidth()) / 0xFFFF));
-  const s32 pos_y = (g_retro_input_state_callback(index, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_IS_OFFSCREEN) ? 0 : (((static_cast<s32>(gun_y) + 0x7FFF) * m_display->GetWindowHeight()) / 0xFFFF));
-
   m_display->SetMousePosition(pos_x, pos_y);
-
 }
 
 void LibretroHostInterface::UpdateControllersPlayStationMouse(u32 index)
 {
   PlayStationMouse* controller = static_cast<PlayStationMouse*>(System::GetController(index));
 
-  static constexpr std::array<std::pair<PlayStationMouse::Button, u32>, 2> button_mapping = {
-    {{PlayStationMouse::Button::Left, RETRO_DEVICE_ID_MOUSE_LEFT},
-     {PlayStationMouse::Button::Right, RETRO_DEVICE_ID_MOUSE_RIGHT}}};
+  /* Parse S-Pen configuration options for PlayStation mouse */
+  const std::string tap_action = GetStringSettingValue("spen", "tap_action", "left_click");
+  const std::string barrel_action = GetStringSettingValue("spen", "barrel_action", "right_click");
+  
+  static int spen_tap_action = SPEN_ACTION_LEFT_CLICK;
+  static int spen_barrel_action = SPEN_ACTION_RIGHT_CLICK;
+  
+  /* Update S-Pen action mappings */
+  if (tap_action == "left_click")
+    spen_tap_action = SPEN_ACTION_LEFT_CLICK;
+  else if (tap_action == "right_click")
+    spen_tap_action = SPEN_ACTION_RIGHT_CLICK;
+  else if (tap_action == "disabled")
+    spen_tap_action = SPEN_ACTION_DISABLED;
+    
+  if (barrel_action == "left_click")
+    spen_barrel_action = SPEN_ACTION_LEFT_CLICK;
+  else if (barrel_action == "right_click")
+    spen_barrel_action = SPEN_ACTION_RIGHT_CLICK;
+  else if (barrel_action == "disabled")
+    spen_barrel_action = SPEN_ACTION_DISABLED;
 
-  for (const auto& it : button_mapping)
+  /* S-Pen absolute positioning support for PlayStation mouse */
+  bool use_pointer_mode = GetBoolSettingValue("spen", "ps_mouse_absolute_mode", false);
+  
+  s32 pos_x = m_display->GetMousePositionX();
+  s32 pos_y = m_display->GetMousePositionY();
+  
+  if (use_pointer_mode)
   {
-    const int16_t state = g_retro_input_state_callback(index, RETRO_DEVICE_MOUSE, 0, it.second);
-    controller->SetButtonState(it.first, state != 0);
+    /* Absolute mode - use RETRO_DEVICE_POINTER for direct S-Pen positioning */
+    /* Always poll coordinates to support hover cursor movement */
+    const int16_t pointer_x = g_retro_input_state_callback(index, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_X);
+    const int16_t pointer_y = g_retro_input_state_callback(index, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_Y);
+    const bool pointer_pressed = g_retro_input_state_callback(index, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED);
+    
+    /* Convert libretro pointer coordinates to screen coordinates */
+    pos_x = ((static_cast<s32>(pointer_x) + 0x8000) * m_display->GetWindowWidth()) / 0x10000;
+    pos_y = ((static_cast<s32>(pointer_y) + 0x8000) * m_display->GetWindowHeight()) / 0x10000;
+    
+    /* S-Pen button detection */
+    int pointer_count = g_retro_input_state_callback(index, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_COUNT);
+    bool tap_detected = pointer_pressed;
+    bool barrel_detected = (pointer_count > 1); /* Side button creates additional pointer */
+    
+    /* Handle S-Pen button actions */
+    bool left_pressed = false;
+    bool right_pressed = false;
+    
+    /* Legacy finger touch support - always preserved */
+    if (tap_detected) {
+      left_pressed = true; /* Default finger touch = left click */
+    }
+    
+    /* S-Pen tap action mapping */
+    if (tap_detected && spen_tap_action != SPEN_ACTION_DISABLED) {
+      switch (spen_tap_action) {
+        case SPEN_ACTION_LEFT_CLICK:  left_pressed = true; break;
+        case SPEN_ACTION_RIGHT_CLICK: right_pressed = true; break;
+      }
+    }
+    
+    /* S-Pen barrel/side button mapping */
+    if (barrel_detected && spen_barrel_action != SPEN_ACTION_DISABLED) {
+      switch (spen_barrel_action) {
+        case SPEN_ACTION_LEFT_CLICK:  left_pressed = true; break;
+        case SPEN_ACTION_RIGHT_CLICK: right_pressed = true; break;
+      }
+    }
+    
+    /* Apply button states */
+    controller->SetButtonState(PlayStationMouse::Button::Left, left_pressed);
+    controller->SetButtonState(PlayStationMouse::Button::Right, right_pressed);
+  }
+  else
+  {
+    /* Relative mode - traditional mouse movement (default) */
+    static constexpr std::array<std::pair<PlayStationMouse::Button, u32>, 2> button_mapping = {
+      {{PlayStationMouse::Button::Left, RETRO_DEVICE_ID_MOUSE_LEFT},
+       {PlayStationMouse::Button::Right, RETRO_DEVICE_ID_MOUSE_RIGHT}}};
+
+    for (const auto& it : button_mapping)
+    {
+      const int16_t state = g_retro_input_state_callback(index, RETRO_DEVICE_MOUSE, 0, it.second);
+      controller->SetButtonState(it.first, state != 0);
+    }
+
+    const int16_t mouse_x = g_retro_input_state_callback(index, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_X);
+    const int16_t mouse_y = g_retro_input_state_callback(index, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_Y);
+    pos_x = (m_display->GetMousePositionX() + mouse_x);
+    pos_y = (m_display->GetMousePositionY() + mouse_y);
   }
 
-  const int16_t mouse_x = g_retro_input_state_callback(index, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_X);
-  const int16_t mouse_y = g_retro_input_state_callback(index, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_Y);
-  const s32 pos_x = (m_display->GetMousePositionX() + mouse_x);
-  const s32 pos_y = (m_display->GetMousePositionY() + mouse_y);
-
   m_display->SetMousePosition(pos_x, pos_y);
-
 }
 
 bool LibretroHostInterface::UpdateCoreOptionsDisplayCallback()
