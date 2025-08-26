@@ -223,6 +223,8 @@ void Settings::Load(SettingsInterface& si)
   controller_show_crosshair = si.GetBoolValue("Controller", "ShowCrosshair", true);
   const std::string guncon_mode = si.GetStringValue("Controller", "GunconInputMode", "lightgun");
   controller_guncon_pointer_mode = (StringUtil::Strcasecmp(guncon_mode.c_str(), "pointer") == 0);
+  
+  controller_ps_mouse_spen_mode = si.GetBoolValue("Controller", "SPenPSMouseAbsoluteMode", false);
 
   memory_card_types[0] =
     ParseMemoryCardTypeName(

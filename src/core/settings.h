@@ -164,6 +164,7 @@ struct Settings
   bool controller_enable_rumble = true;
   bool controller_show_crosshair = true;
   bool controller_guncon_pointer_mode = false;
+  bool controller_ps_mouse_spen_mode = false;
 
   std::array<MemoryCardType, NUM_CONTROLLER_AND_CARD_PORTS> memory_card_types{};
   std::array<std::string, NUM_CONTROLLER_AND_CARD_PORTS> memory_card_paths{};

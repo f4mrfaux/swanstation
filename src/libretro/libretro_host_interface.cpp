@@ -1785,7 +1785,7 @@ void LibretroHostInterface::UpdateControllersPlayStationMouse(u32 index)
     spen_barrel_action = SPEN_ACTION_DISABLED;
 
   /* S-Pen absolute positioning support for PlayStation mouse */
-  bool use_pointer_mode = GetBoolSettingValue("spen", "ps_mouse_absolute_mode", false);
+  bool use_pointer_mode = g_settings.controller_ps_mouse_spen_mode;
   
   s32 pos_x = m_display->GetMousePositionX();
   s32 pos_y = m_display->GetMousePositionY();
