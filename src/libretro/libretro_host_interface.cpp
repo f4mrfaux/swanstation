@@ -42,6 +42,8 @@
 #define SPEN_ACTION_RELOAD        5
 
 /* S-Pen configuration variables */
+static int spen_coordinate_mode = 0; /* 0=absolute, 1=relative */
+static int spen_input_mode = 0; /* 0=auto, 1=mouse, 2=lightgun */
 static int spen_tap_action = SPEN_ACTION_TRIGGER;
 static int spen_barrel_action = SPEN_ACTION_RELOAD;
 
@@ -1639,8 +1641,24 @@ void LibretroHostInterface::UpdateControllersNamcoGunCon(u32 index)
   NamcoGunCon* controller = static_cast<NamcoGunCon*>(System::GetController(index));
 
   /* Parse S-Pen configuration options */
+  const std::string coordinate_mode = GetStringSettingValue("spen", "coordinate_mode", "absolute");
+  const std::string input_mode = GetStringSettingValue("spen", "input_mode", "auto");
   const std::string tap_action = GetStringSettingValue("spen", "tap_action", "trigger");
   const std::string barrel_action = GetStringSettingValue("spen", "barrel_action", "reload");
+
+  /* Update S-Pen coordinate mode */
+  if (coordinate_mode == "absolute")
+    spen_coordinate_mode = 0;
+  else if (coordinate_mode == "relative")
+    spen_coordinate_mode = 1;
+
+  /* Update S-Pen input mode */
+  if (input_mode == "auto")
+    spen_input_mode = 0;
+  else if (input_mode == "mouse")
+    spen_input_mode = 1;
+  else if (input_mode == "lightgun")
+    spen_input_mode = 2;
   
   if (tap_action == "left_click")
     spen_tap_action = SPEN_ACTION_LEFT_CLICK;
@@ -1764,8 +1782,24 @@ void LibretroHostInterface::UpdateControllersPlayStationMouse(u32 index)
   PlayStationMouse* controller = static_cast<PlayStationMouse*>(System::GetController(index));
 
   /* Parse S-Pen configuration options for PlayStation mouse */
+  const std::string coordinate_mode = GetStringSettingValue("spen", "coordinate_mode", "absolute");
+  const std::string input_mode = GetStringSettingValue("spen", "input_mode", "auto");
   const std::string tap_action = GetStringSettingValue("spen", "tap_action", "left_click");
   const std::string barrel_action = GetStringSettingValue("spen", "barrel_action", "right_click");
+
+  /* Update S-Pen coordinate mode */
+  if (coordinate_mode == "absolute")
+    spen_coordinate_mode = 0;
+  else if (coordinate_mode == "relative")
+    spen_coordinate_mode = 1;
+
+  /* Update S-Pen input mode */  
+  if (input_mode == "auto")
+    spen_input_mode = 0;
+  else if (input_mode == "mouse")
+    spen_input_mode = 1;
+  else if (input_mode == "lightgun")
+    spen_input_mode = 2;
   
   static int spen_tap_action = SPEN_ACTION_LEFT_CLICK;
   static int spen_barrel_action = SPEN_ACTION_RIGHT_CLICK;
