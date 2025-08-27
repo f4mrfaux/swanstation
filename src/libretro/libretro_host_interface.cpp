@@ -1680,8 +1680,9 @@ void LibretroHostInterface::UpdateControllersNamcoGunCon(u32 index)
     const bool pointer_pressed = g_retro_input_state_callback(index, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED);
     
     /* Update position whether pressed or hovering to support cursor movement */
-    pos_x = ((static_cast<s32>(pointer_x) + 0x8000) * m_display->GetWindowWidth()) / 0x10000;
-    pos_y = ((static_cast<s32>(pointer_y) + 0x8000) * m_display->GetWindowHeight()) / 0x10000;
+    /* libretro pointer range: -0x7FFF to +0x7FFF (signed), map to screen coordinates */
+    pos_x = ((static_cast<s32>(pointer_x) + 0x7FFF) * m_display->GetWindowWidth()) / 0xFFFE;
+    pos_y = ((static_cast<s32>(pointer_y) + 0x7FFF) * m_display->GetWindowHeight()) / 0xFFFE;
     
     /* Button processing happens below for pressed state */
 
@@ -1799,8 +1800,9 @@ void LibretroHostInterface::UpdateControllersPlayStationMouse(u32 index)
     const bool pointer_pressed = g_retro_input_state_callback(index, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED);
     
     /* Convert libretro pointer coordinates to screen coordinates */
-    pos_x = ((static_cast<s32>(pointer_x) + 0x8000) * m_display->GetWindowWidth()) / 0x10000;
-    pos_y = ((static_cast<s32>(pointer_y) + 0x8000) * m_display->GetWindowHeight()) / 0x10000;
+    /* libretro pointer range: -0x7FFF to +0x7FFF (signed), map to screen coordinates */
+    pos_x = ((static_cast<s32>(pointer_x) + 0x7FFF) * m_display->GetWindowWidth()) / 0xFFFE;
+    pos_y = ((static_cast<s32>(pointer_y) + 0x7FFF) * m_display->GetWindowHeight()) / 0xFFFE;
     
     /* S-Pen button detection */
     int pointer_count = g_retro_input_state_callback(index, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_COUNT);
